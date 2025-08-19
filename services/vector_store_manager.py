@@ -4,10 +4,7 @@ from langchain_community.vectorstores import MongoDBAtlasVectorSearch
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# --- Constantes ---
-MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "ia_auditor_db"
-
 # Modelo de embeddings que usaremos. 'all-MiniLM-L6-v2' es rápido y eficaz.
 # Es importante que el número de dimensiones coincida con el índice de Atlas (384 para este modelo).
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
@@ -15,12 +12,14 @@ embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
 
 def get_mongo_collection(collection_name: str):
     """Obtiene una colección de la base de datos MongoDB."""
-    if not MONGO_URI:
+    # Obtenemos la URI desde las variables de entorno aquí, para asegurar
+    # que .env ya ha sido cargado por el script o la app que llama.
+    mongo_uri = os.getenv("MONGO_URI")
+    if not mongo_uri:
         raise ValueError("La variable de entorno MONGO_URI no está configurada.")
     
-    # Añadimos un bloque try-except para verificar la conexión explícitamente
     try:
-        client = MongoClient(MONGO_URI)
+        client = MongoClient(mongo_uri)
         # La siguiente línea fuerza una conexión al servidor para verificar las credenciales.
         # Es el método estándar para confirmar que la conexión es válida.
         client.admin.command('ping')

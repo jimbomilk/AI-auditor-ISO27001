@@ -7,6 +7,8 @@ Este sistema ayuda a los auditores y consultores a acelerar el proceso de certif
 Características Principales (Alcance del POC)
 Carga de Documentos: Permite al usuario subir políticas, procedimientos y otros documentos relevantes en formato PDF o DOCX.
 
+**Declaración de Aplicabilidad (SoA) Simulada:** Antes del análisis, el usuario puede seleccionar qué controles del Anexo A son aplicables a su organización, alineando el POC con el enfoque basado en riesgos de la norma.
+
 Análisis de Cobertura de Controles: La IA analiza los documentos para determinar qué controles del Anexo A de la ISO 27001 están cubiertos.
 
 Chat Interactivo (Q&A): Un asistente conversacional que responde preguntas específicas sobre la norma y su aplicación en los documentos proporcionados. Por ejemplo: "¿Mi política de control de acceso cumple con el control A.5.15?".
@@ -78,15 +80,12 @@ flask run
 
 Uso (Ejemplo de Flujo)
 Abre la aplicación web.
-
 Sube tu "Política de Seguridad de la Información" en formato PDF.
-
-El sistema procesará el documento.
-
-Navega a la sección "Análisis de Anexo A" para ver una tabla con la cobertura de los controles.
-
+El sistema te llevará a la pantalla de "Declaración de Aplicabilidad".
+Selecciona los controles que consideres relevantes para tu organización.
+Haz clic en "Continuar y Analizar Documento".
+El sistema procesará el documento y mostrará el informe de cobertura, marcando como "No Aplicable" los controles que deseleccionaste.
 Utiliza el chat para preguntar: "¿Qué evidencia necesito para el control A.8.1 sobre los activos de la organización?".
-
 La IA te proporcionará una respuesta basada en la norma y en el contenido de tu política.
 
 Próximos Pasos (Más allá del POC)

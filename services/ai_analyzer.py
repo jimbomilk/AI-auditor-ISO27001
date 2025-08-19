@@ -6,34 +6,47 @@ from google.api_core import exceptions as google_exceptions
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.pydantic_v1 import BaseModel, Field
-from .vector_store_manager import get_vector_store_retriever
+from .vector_store_manager import get_vector_store_retriever, get_mongo_collection
 from langchain_core.output_parsers import StrOutputParser
 
 
-# Para el POC, definimos un subconjunto de controles del Anexo A aquí.
-# En una aplicación real, esto vendría de una base de datos.
-ISO_27001_CONTROLS = [
-    {"id": "A.5.1", "description": "Políticas para la seguridad de la información"},
-    {"id": "A.5.15", "description": "Control de acceso"},
-    {"id": "A.5.23", "description": "Seguridad de la información para el uso de servicios en la nube"},
-    {"id": "A.8.1", "description": "Inventario de activos relacionados con la información y otros activos asociados"},
-    {"id": "A.8.9", "description": "Gestión de la información y otros activos asociados"},
-    {"id": "A.8.16", "description": "Supervisión de la actividad"},
-]
+def get_iso_controls_from_db() -> list:
+    """
+    Obtiene la lista completa de controles de la ISO 27001 desde la base de datos MongoDB.
+    """
+    try:
+        controls_collection = get_mongo_collection("iso_27001_controls")
+        # Proyectamos para excluir el _id de MongoDB y solo devolver id y description
+        controls = list(controls_collection.find({}, {"_id": 0, "id": 1, "description": 1}))
+        if not controls:
+            print("ADVERTENCIA: La colección de controles 'iso_27001_controls' está vacía o no existe.")
+            print("Por favor, ejecuta el script 'scripts/seed_database.py' para poblarla.")
+            return []
+        return controls
+    except Exception as e:
+        print(f"Error al obtener los controles de la base de datos: {e}")
+        return []
 
 # Definir la estructura de salida deseada con Pydantic para mayor robustez.
 class ControlAnalysis(BaseModel):
     status: str = Field(description="Uno de: 'Covered', 'Partially Covered', 'Not Covered', 'Not Applicable'")
     justification: str = Field(description="Explicación concisa del razonamiento basado en el documento.")
 
-def analyze_document_coverage(document_text: str) -> list:
+def analyze_document_coverage(document_text: str, applicable_control_ids: list) -> list:
     """
-    Analiza el texto de un documento contra los controles de la ISO 27001.
+    Analiza el texto de un documento contra los controles de la ISO 27001,
+    considerando cuáles han sido marcados como aplicables por el usuario.
     """
     api_key = os.getenv("API_KEY_GEMINI")
     if not api_key or api_key == "YOUR_GEMINI_API_KEY":
         print("Error: La API Key de Gemini no está configurada.")
         return [{"error": "API Key no configurada."}]
+
+    # Si no se pasaron IDs, se asume que todos son aplicables (comportamiento por defecto)
+    all_applicable = not bool(applicable_control_ids)
+    iso_controls = get_iso_controls_from_db()
+    if not iso_controls:
+        return [{"error": "No se pudieron cargar los controles de la ISO 27001 desde la base de datos. Ejecuta el script de inicialización 'scripts/seed_database.py'."}]
 
     try:
         # ACTUALIZACIÓN DEFINITIVA:
@@ -71,10 +84,17 @@ def analyze_document_coverage(document_text: str) -> list:
         chain = prompt | llm | output_parser
 
         results = []
-        for control in ISO_27001_CONTROLS:
-            # La cadena ahora devuelve directamente un diccionario Python.
-            analysis_result = chain.invoke({"document_text": document_text, "control_id": control["id"], "control_description": control["description"]})
-            results.append({**control, **analysis_result})
+        for control in iso_controls:
+            if all_applicable or control["id"] in applicable_control_ids:
+                # Si el control es aplicable, se analiza con la IA
+                analysis_result = chain.invoke({"document_text": document_text, "control_id": control["id"], "control_description": control["description"]})
+                results.append({**control, **analysis_result})
+            else:
+                # Si no es aplicable, se marca como tal sin llamar a la IA
+                results.append({
+                    **control, 
+                    "status": "Not Applicable", 
+                    "justification": "Definido como no aplicable por el usuario en la Declaración de Aplicabilidad."})
 
         return results
 

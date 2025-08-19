@@ -1,9 +1,9 @@
 import os
-from flask import Flask, render_template, request, flash, redirect, url_for, jsonify
+from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, session
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from services.document_processor import extract_text_from_document
-from services.ai_analyzer import analyze_document_coverage, answer_question_with_rag, generate_policy_draft, identify_risks_for_control
+from services.ai_analyzer import analyze_document_coverage, answer_question_with_rag, generate_policy_draft, identify_risks_for_control, get_iso_controls_from_db
 from services.vector_store_manager import create_vector_store
 # --- Diagnóstico de Versión ---
 # El método anterior (`__version__`) falló. Usamos una forma más robusta para obtener la versión del paquete.
@@ -60,12 +60,30 @@ def index():
             filename = secure_filename(file.filename)
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(file_path)
-            # Redirigir a la página de análisis para este fichero
-            return redirect(url_for('analysis_page', filename=filename))
+            # Redirigir a la página de selección de controles (simulación de SoA)
+            return redirect(url_for('select_controls', filename=filename))
         else:
             flash('Tipo de fichero no permitido. Sube solo PDF o DOCX.', 'error')
             return redirect(request.url)
     return render_template('index.html', title='Inicio')
+
+@app.route('/select_controls/<filename>', methods=['GET', 'POST'])
+def select_controls(filename):
+    """Página para que el usuario seleccione los controles aplicables (simula la SoA)."""
+    if request.method == 'POST':
+        # Guardar los controles seleccionados en la sesión del usuario
+        session['applicable_controls'] = request.form.getlist('applicable_controls')
+        if not session['applicable_controls']:
+            flash('No has seleccionado ningún control como aplicable. El análisis se realizará sobre todos.', 'warning')
+        return redirect(url_for('analysis_page', filename=filename))
+
+    # Para el método GET, mostrar la lista de controles
+    all_controls = get_iso_controls_from_db()
+    if not all_controls or 'error' in all_controls[0]:
+        flash('No se pudieron cargar los controles de la base de datos. Asegúrate de haber ejecutado el script de inicialización.', 'error')
+        return redirect(url_for('index'))
+    
+    return render_template('select_controls.html', title='Declaración de Aplicabilidad', filename=filename, all_controls=all_controls)
 
 @app.route('/analysis/<filename>')
 def analysis_page(filename):
@@ -93,10 +111,13 @@ def analysis_page(filename):
         except Exception as e:
             flash(f'Error al crear la base de datos vectorial: {e}', 'error')
 
+    # Obtener los controles aplicables de la sesión, o todos si no se seleccionó ninguno.
+    applicable_controls_ids = session.get('applicable_controls', [])
+
     # Realizar el análisis de cobertura con la IA
     analysis_results = []
     if extracted_text:
-        analysis_results = analyze_document_coverage(extracted_text)
+        analysis_results = analyze_document_coverage(extracted_text, applicable_controls_ids)
         if analysis_results and "error" in analysis_results[0]:
              flash(f'Error en el análisis de IA: {analysis_results[0]["error"]}', 'error')
              analysis_results = [] # Limpiar resultados para no mostrar error en la tabla

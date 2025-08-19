@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, flash, redirect, url_for, jso
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from services.document_processor import extract_text_from_document
-from services.ai_analyzer import analyze_document_coverage, answer_question_with_rag, generate_policy_draft
+from services.ai_analyzer import analyze_document_coverage, answer_question_with_rag, generate_policy_draft, identify_risks_for_control
 from services.vector_store_manager import create_vector_store
 # --- Diagnóstico de Versión ---
 # El método anterior (`__version__`) falló. Usamos una forma más robusta para obtener la versión del paquete.
@@ -128,6 +128,19 @@ def generate_draft():
 
     draft = generate_policy_draft(control_id, control_description)
     return jsonify({'draft': draft})
+
+@app.route('/identify_risks', methods=['POST'])
+def identify_risks():
+    """Endpoint para identificar riesgos de un control no cubierto."""
+    data = request.get_json()
+    control_id = data.get('control_id')
+    control_description = data.get('control_description')
+
+    if not control_id or not control_description:
+        return jsonify({'error': 'Faltan datos del control.'}), 400
+
+    risks = identify_risks_for_control(control_id, control_description)
+    return jsonify({'risks': risks})
 
 # Esto permite ejecutar la aplicación directamente con `python app.py`
 # lo cual es útil para depurar. `debug=True` activa el recargado automático

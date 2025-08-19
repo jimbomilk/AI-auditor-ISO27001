@@ -161,3 +161,38 @@ def generate_policy_draft(control_id: str, control_description: str) -> str:
     except Exception as e:
         print(f"Error al generar el borrador de política: {e}")
         return "Ocurrió un error al generar el borrador. Por favor, revisa la consola para más detalles."
+
+def identify_risks_for_control(control_id: str, control_description: str) -> str:
+    """
+    Identifica riesgos potenciales para un control de la ISO 27001 no implementado.
+    """
+    try:
+        api_key = os.getenv("API_KEY_GEMINI")
+        if not api_key or api_key == "YOUR_GEMINI_API_KEY":
+            print("Error: La API Key de Gemini no está configurada.")
+            return "Error: La API Key de Gemini no está configurada."
+
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=api_key, temperature=0.5)
+
+        prompt_template = """
+        Eres un experto en gestión de riesgos de ciberseguridad y la norma ISO 27001:2022.
+        Tu tarea es identificar y describir brevemente 2 o 3 riesgos comunes que una organización enfrentaría si NO implementara el siguiente control.
+
+        CONTROL NO IMPLEMENTADO:
+        - ID: {control_id}
+        - Descripción: {control_description}
+
+        Para cada riesgo, describe:
+        1.  **Nombre del Riesgo:** Un título claro y conciso.
+        2.  **Descripción:** Cómo podría materializarse el riesgo y cuál sería su impacto potencial en la confidencialidad, integridad y/o disponibilidad de la información.
+
+        Formatea la salida en Markdown. Usa encabezados para cada riesgo.
+        """
+        prompt = PromptTemplate.from_template(prompt_template)
+
+        chain = prompt | llm | StrOutputParser()
+
+        return chain.invoke({"control_id": control_id, "control_description": control_description})
+    except Exception as e:
+        print(f"Error al identificar riesgos: {e}")
+        return "Ocurrió un error al identificar los riesgos. Por favor, revisa la consola."

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - IA-Auditor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <!-- Pasamos el nombre de la colección a JavaScript -->
+    <script>
+        const COLLECTION_NAME = "{{ collection_name }}";
+    </script>
+
+    <div class="container mx-auto p-4">
+        <header class="text-center my-8">
+            <h1 class="text-4xl font-bold">Análisis del Documento</h1>
+            <p class="text-xl mt-2 text-gray-600">{{ filename }}</p>
+        </header>
+
+        <main>
+            <!-- Sección para mostrar mensajes flash -->
+            {% include 'flash_messages.html' %}
+
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4">2. Texto Extraído del Documento</h2>
+                <p class="mb-4 text-sm text-gray-600">Este es el contenido que la IA utilizará para el análisis. Verifica que el texto se haya extraído correctamente.</p>
+                <div class="w-full h-96 overflow-y-auto bg-gray-50 p-4 border rounded-md">
+                    <pre class="whitespace-pre-wrap text-sm">{{ extracted_text or "No se pudo extraer texto de este documento." }}</pre>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4">3. Análisis de Cobertura de Controles</h2>
+                {% if analysis_results %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="w-1/12 py-2 px-4 text-left">Control</th>
+                                <th class="w-3/12 py-2 px-4 text-left">Descripción</th>
+                                <th class="w-2/12 py-2 px-4 text-left">Estado</th>
+                                <th class="w-4/12 py-2 px-4 text-left">Justificación IA</th>
+                                <th class="w-2/12 py-2 px-4 text-left">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for result in analysis_results %}
+                            <tr class="border-b">
+                                <td class="py-2 px-4 font-mono">{{ result.id }}</td>
+                                <td class="py-2 px-4">{{ result.description }}</td>
+                                <td class="py-2 px-4">
+                                    {% set status_lower = result.status | lower %}
+                                    <span class="px-2 py-1 font-semibold text-sm rounded-md
+                                        {% if 'covered' in status_lower and 'partially' not in status_lower %} bg-green-200 text-green-800
+                                        {% elif 'partially' in status_lower %} bg-yellow-200 text-yellow-800
+                                        {% elif 'not covered' in status_lower %} bg-red-200 text-red-800
+                                        {% else %} bg-gray-200 text-gray-800 {% endif %}">
+                                        {{ result.status }}
+                                    </span>
+                                </td>
+                                <td class="py-2 px-4 text-sm">{{ result.justification }}</td>
+                                <td class="py-2 px-4 text-sm">
+                                    {% if 'not covered' in result.status | lower %}
+                                    <button class="generate-draft-btn bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded"
+                                            data-control-id="{{ result.id }}"
+                                            data-control-description="{{ result.description }}">
+                                        Generar Borrador
+                                    </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-500">El análisis no pudo ser completado. Verifica que el documento contenga texto y que la API Key esté configurada correctamente.</p>
+                {% endif %}
+            </div>
+            
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4">4. Chat Interactivo con el Documento</h2>
+                <div id="chat-container" class="flex flex-col h-[32rem]">
+                    <!-- Área de mensajes del chat -->
+                    <div id="chat-messages" class="flex-1 overflow-y-auto p-4 border rounded-t-lg bg-gray-50">
+                        <div class="flex justify-start mb-4">
+                            <div class="bg-gray-200 text-gray-800 p-3 rounded-lg max-w-lg">
+                                <p>¡Hola! Soy tu asistente de auditoría. Pregúntame cualquier cosa sobre el contenido de este documento.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Input del chat -->
+                    <div class="p-4 border-t bg-white rounded-b-lg">
+                        <form id="chat-form" class="flex items-center">
+                            <input type="text" id="chat-input" placeholder="Ej: ¿Mi política de control de acceso cumple con el control A.5.15?" class="flex-1 p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button type="submit" class="bg-blue-500 text-white p-2 rounded-r-lg hover:bg-blue-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                </svg>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mt-8">
+                <a href="{{ url_for('index') }}" class="text-blue-500 hover:text-blue-700">&larr; Volver y subir otro documento</a>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para el Borrador de Política -->
+    <div id="draft-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-2xl leading-6 font-medium text-gray-900" id="modal-title">Borrador de Política</h3>
+                    <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="modal-body" class="mt-2 px-4 py-3 h-96 overflow-y-auto bg-gray-50 rounded-md border">
+                    <!-- El contenido del borrador se insertará aquí -->
+                </div>
+                <div class="items-center px-4 py-3 mt-4">
+                    <button id="close-modal-footer-btn" class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const chatMessages = document.getElementById('chat-messages');
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const question = chatInput.value.trim();
+            if (!question) return;
+
+            // Mostrar el mensaje del usuario
+            appendMessage(question, 'user');
+            chatInput.value = '';
+
+            // Mostrar indicador de "pensando"
+            const thinkingIndicator = appendMessage('...', 'ai', true);
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question, collection_name: COLLECTION_NAME }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Error en la respuesta del servidor.');
+                }
+
+                const data = await response.json();
+                // Reemplazar el indicador de "pensando" con la respuesta real
+                thinkingIndicator.querySelector('p').textContent = data.answer;
+
+            } catch (error) {
+                console.error('Error en el chat:', error);
+                thinkingIndicator.querySelector('p').textContent = 'Lo siento, ha ocurrido un error. Por favor, inténtalo de nuevo.';
+                thinkingIndicator.classList.add('bg-red-200', 'text-red-800');
+            }
+        });
+
+        function appendMessage(text, sender, isThinking = false) {
+            const messageWrapper = document.createElement('div');
+            messageWrapper.classList.add('flex', 'mb-4');
+
+            const messageBubble = document.createElement('div');
+            messageBubble.classList.add('p-3', 'rounded-lg', 'max-w-lg');
+
+            if (sender === 'user') {
+                messageWrapper.classList.add('justify-end');
+                messageBubble.classList.add('bg-blue-500', 'text-white');
+            } else {
+                messageWrapper.classList.add('justify-start');
+                messageBubble.classList.add('bg-gray-200', 'text-gray-800');
+            }
+
+            const p = document.createElement('p');
+            p.textContent = text;
+            if (isThinking) {
+                p.classList.add('animate-pulse');
+            }
+
+            messageBubble.appendChild(p);
+            messageWrapper.appendChild(messageBubble);
+            chatMessages.appendChild(messageWrapper);
+
+            // Scroll hasta el final
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            return messageBubble; // Devolver la burbuja para poder modificarla
+        }
+
+        // --- Lógica del Modal para Generar Borradores ---
+        const modal = document.getElementById('draft-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const closeModalFooterBtn = document.getElementById('close-modal-footer-btn');
+        const generateDraftButtons = document.querySelectorAll('.generate-draft-btn');
+
+        function openModal() {
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+        }
+
+        closeModalBtn.addEventListener('click', closeModal);
+        closeModalFooterBtn.addEventListener('click', closeModal);
+
+        generateDraftButtons.forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const controlId = e.target.dataset.controlId;
+                const controlDescription = e.target.dataset.controlDescription;
+
+                // Preparar y abrir el modal
+                modalTitle.textContent = `Borrador para el Control ${controlId}`;
+                modalBody.innerHTML = `
+                    <div class="flex justify-center items-center h-full">
+                        <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="ml-3 text-gray-600">Generando borrador con IA...</p>
+                    </div>`;
+                openModal();
+
+                try {
+                    const response = await fetch('/generate_draft', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            control_id: controlId,
+                            control_description: controlDescription
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Error en la respuesta del servidor.');
+                    }
+
+                    const data = await response.json();
+                    // Usamos <pre> para respetar los saltos de línea y el formato del markdown
+                    modalBody.innerHTML = `<pre class="whitespace-pre-wrap text-sm">${data.draft}</pre>`;
+
+                } catch (error) {
+                    console.error('Error al generar el borrador:', error);
+                    modalBody.innerHTML = `<p class="text-red-500">Lo siento, ha ocurrido un error al generar el borrador. Por favor, inténtalo de nuevo.</p>`;
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

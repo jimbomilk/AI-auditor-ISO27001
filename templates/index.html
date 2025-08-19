@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - IA-Auditor ISO 27001</title>
+    <!-- Incluiremos Tailwind CSS a través de CDN para este POC inicial -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div class="container mx-auto p-4">
+        <header class="text-center my-8">
+            <h1 class="text-4xl font-bold">IA-Auditor ISO 27001 (POC) 🚀</h1>
+            <p class="text-xl mt-2">Bienvenido al Proof of Concept.</p>
+        </header>
+
+        <main id="main-content">
+            <!-- Sección para mostrar mensajes flash -->
+            {% include 'flash_messages.html' %}
+
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4">1. Sube tu documentación</h2>
+                <p class="mb-4">Sube políticas, procedimientos u otros documentos en formato PDF o DOCX para que la IA los analice.</p>
+
+                <form id="upload-form" action="/" method="post" enctype="multipart/form-data">
+                    <div class="flex items-center justify-center w-full">
+                        <label for="dropzone-file" class="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                            <div id="dropzone-content" class="flex flex-col items-center justify-center pt-5 pb-6 text-center">
+                                <svg class="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                                </svg>
+                                <p class="mb-2 text-sm text-gray-500"><span class="font-semibold">Haz clic para subir</span> o arrastra y suelta</p>
+                                <p class="text-xs text-gray-500">PDF o DOCX</p>
+                            </div>
+                            <input id="dropzone-file" name="file" type="file" class="hidden" />
+                        </label>
+                    </div>
+                    <div class="mt-4 text-center">
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            Analizar Documento
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </main>
+
+        <!-- Indicador de carga -->
+        <div id="loading-indicator" class="hidden text-center my-16">
+            <div class="flex justify-center items-center mb-4">
+                <svg class="animate-spin h-12 w-12 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <h2 class="text-2xl font-semibold mt-4 text-gray-700">Analizando documento...</h2>
+            <p class="text-gray-600 mt-2">Este proceso puede tardar unos segundos. Por favor, no cierres esta ventana.</p>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('dropzone-file');
+        const dropzoneContent = document.getElementById('dropzone-content');
+        const originalContent = dropzoneContent.innerHTML;
+
+        fileInput.addEventListener('change', (event) => {
+            if (event.target.files.length > 0) {
+                const fileName = event.target.files[0].name;
+                // Cambiamos el contenido para mostrar el fichero seleccionado
+                dropzoneContent.innerHTML = `
+                    <svg class="w-8 h-8 mb-4 text-green-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 12">
+                        <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 5.917 5.724 10.5 15 1.5"/>
+                    </svg>
+                    <p class="mb-2 text-sm text-gray-700"><span class="font-semibold">Fichero seleccionado:</span></p>
+                    <p class="text-md text-gray-900 font-bold px-4">${fileName}</p>
+                `;
+            } else {
+                // Si el usuario cancela la selección, restauramos el contenido original.
+                dropzoneContent.innerHTML = originalContent;
+            }
+        });
+
+        const uploadForm = document.getElementById('upload-form');
+        const mainContent = document.getElementById('main-content');
+        const loadingIndicator = document.getElementById('loading-indicator');
+
+        uploadForm.addEventListener('submit', (e) => {
+            // Validar que se ha seleccionado un fichero
+            if (fileInput.files.length === 0) {
+                e.preventDefault(); // Detener el envío del formulario
+                // Un alert es simple y efectivo para este caso.
+                alert('Por favor, selecciona un fichero antes de analizar.');
+                return;
+            }
+
+            // Ocultar el contenido principal y mostrar el indicador de carga
+            mainContent.classList.add('hidden');
+            loadingIndicator.classList.remove('hidden');
+        });
+    </script>
+</body>
+</html>

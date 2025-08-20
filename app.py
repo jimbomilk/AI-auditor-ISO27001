@@ -1,22 +1,55 @@
 import os
-from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, session
+import sys
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from services.document_processor import extract_text_from_document
 from services.ai_analyzer import analyze_document_coverage, answer_question_with_rag, generate_policy_draft, identify_risks_for_control, get_iso_controls_from_db
 from services.vector_store_manager import create_vector_store
-# --- Diagnóstico de Versión ---
-# El método anterior (`__version__`) falló. Usamos una forma más robusta para obtener la versión del paquete.
-try:
-    from importlib.metadata import version
-    pkg_version = version('langchain-google-genai')
-    print(f"--- Usando langchain-google-genai versión: {pkg_version} ---")
-except Exception as e:
-    print(f"--- No se pudo determinar la versión de langchain-google-genai: {e} ---")
-# -----------------------------
+# --- Importar Vertex AI para inicialización ---
+import vertexai
+import google.auth
 
 # Cargar variables de entorno desde .env
 load_dotenv()
+
+# --- Verificación y Configuración de Google Cloud ---
+google_creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
+location = os.getenv('GOOGLE_CLOUD_LOCATION') # La ubicación debe estar definida explícitamente en .env
+
+# Verificación de credenciales
+if not google_creds_path or not os.path.exists(google_creds_path):
+    print("="*80)
+    print("ERROR FATAL: No se encuentra el fichero de credenciales de Google Cloud.")
+    print(f"La variable de entorno GOOGLE_APPLICATION_CREDENTIALS apunta a: {google_creds_path}")
+    print("Por favor, asegúrate de que la ruta en tu fichero .env es correcta y absoluta.")
+    print("Ejemplo para Windows: GOOGLE_APPLICATION_CREDENTIALS=C:\\ruta\\completa\\a\\tu\\fichero.json")
+    print("="*80)
+    sys.exit(1) # Detener la aplicación si la configuración es incorrecta
+
+# Verificación del ID de proyecto e inicialización de Vertex AI
+if not project_id:
+    print("="*80)
+    print("ERROR FATAL: La variable de entorno 'GOOGLE_CLOUD_PROJECT' no está configurada.")
+    print("Por favor, añade tu ID de proyecto de Google Cloud a tu fichero .env.")
+    print("="*80)
+    sys.exit(1) # Detener la aplicación
+else:
+    try:
+        # Inicializar Vertex AI con el proyecto y las credenciales encontradas.
+        # Esto configura la librería para todas las llamadas posteriores.
+        vertexai.init(project=project_id, location=location)
+        print(f"--- Vertex AI inicializado para el proyecto: {project_id} ---")
+    except google.auth.exceptions.DefaultCredentialsError as e:
+        print(f"ERROR FATAL: Error de credenciales de Google. Causa: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print("="*80)
+        print(f"ERROR FATAL: No se pudo inicializar Vertex AI. Causa: {e}")
+        print("Verifica que el proyecto exista, que la facturación esté habilitada y que la cuenta de servicio tenga el rol 'Usuario de Vertex AI'.")
+        print("="*80)
+        sys.exit(1) # Detener la aplicación
 
 # --- Configuración ---
 UPLOAD_FOLDER = 'uploads'
@@ -30,12 +63,6 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Crear el directorio de subidas si no existe
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# Verificación de la clave de API (aunque no la usemos todavía)
-# Esto nos ayudará a depurar problemas de configuración más adelante.
-if not os.getenv('API_KEY_GEMINI') or os.getenv('API_KEY_GEMINI') == "YOUR_GEMINI_API_KEY":
-    print("ADVERTENCIA: La variable de entorno API_KEY_GEMINI no está configurada en el fichero .env")
-    print("Por favor, obtén una clave y añádela para poder usar las funciones de IA.")
 
 def allowed_file(filename):
     """Verifica si el fichero tiene una extensión permitida."""
@@ -79,7 +106,9 @@ def select_controls(filename):
 
     # Para el método GET, mostrar la lista de controles
     all_controls = get_iso_controls_from_db()
-    if not all_controls or 'error' in all_controls[0]:
+    # La función get_iso_controls_from_db devuelve una lista vacía si hay un error
+    # o no hay datos, por lo que esta es la única comprobación necesaria y segura.
+    if not all_controls:
         flash('No se pudieron cargar los controles de la base de datos. Asegúrate de haber ejecutado el script de inicialización.', 'error')
         return redirect(url_for('index'))
     
@@ -117,10 +146,15 @@ def analysis_page(filename):
     # Realizar el análisis de cobertura con la IA
     analysis_results = []
     if extracted_text:
-        analysis_results = analyze_document_coverage(extracted_text, applicable_controls_ids)
-        if analysis_results and "error" in analysis_results[0]:
-             flash(f'Error en el análisis de IA: {analysis_results[0]["error"]}', 'error')
-             analysis_results = [] # Limpiar resultados para no mostrar error en la tabla
+        # Renombramos la variable para mayor claridad
+        raw_analysis_results = analyze_document_coverage(extracted_text, applicable_controls_ids)
+        
+        # Verificamos de forma más robusta si el análisis devolvió un error
+        if raw_analysis_results and isinstance(raw_analysis_results[0], dict) and "error" in raw_analysis_results[0]:
+             flash(f'Error en el análisis de IA: {raw_analysis_results[0]["error"]}', 'error')
+             # No pasamos los resultados con error a la plantilla, se queda como lista vacía.
+        else:
+            analysis_results = raw_analysis_results
 
     return render_template('analysis.html', title=f'Análisis de {filename}', filename=filename, extracted_text=extracted_text, analysis_results=analysis_results, collection_name=collection_name)
 

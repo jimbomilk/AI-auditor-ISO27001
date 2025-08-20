@@ -1,14 +1,37 @@
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
 from langchain_core.prompts import PromptTemplate
 # Importar la excepción específica para una mejor gestión de errores
 from google.api_core import exceptions as google_exceptions
 from langchain_core.output_parsers import JsonOutputParser
+from pydantic import BaseModel, Field
 from langchain_core.runnables import RunnablePassthrough
-from langchain_core.pydantic_v1 import BaseModel, Field
 from .vector_store_manager import get_vector_store_retriever, get_mongo_collection
 from langchain_core.output_parsers import StrOutputParser
 
+# --- Refactorización: Inicialización diferida (Lazy Loading) del LLM ---
+# No creamos la instancia del modelo al cargar el fichero.
+# La crearemos la primera vez que se necesite para asegurar que `vertexai.init()`
+# ya ha sido llamado por la aplicación principal (app.py).
+_llm_instance = None
+
+def get_llm():
+    """
+    Obtiene una instancia singleton del modelo LLM.
+    La crea en la primera llamada y la reutiliza en las siguientes.
+    """
+    global _llm_instance
+    if _llm_instance is None:
+        # La temperatura se puede variar si es necesario, pero para análisis es mejor 0.
+        # Siendo explícitos con la ubicación para evitar ambigüedades.
+        location = os.getenv('GOOGLE_CLOUD_LOCATION')
+        model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash') # Usar un fallback robusto
+        _llm_instance = ChatVertexAI(
+            model_name=model_name,
+            temperature=0,
+            location=location
+        )
+    return _llm_instance
 
 def get_iso_controls_from_db() -> list:
     """
@@ -37,11 +60,6 @@ def analyze_document_coverage(document_text: str, applicable_control_ids: list) 
     Analiza el texto de un documento contra los controles de la ISO 27001,
     considerando cuáles han sido marcados como aplicables por el usuario.
     """
-    api_key = os.getenv("API_KEY_GEMINI")
-    if not api_key or api_key == "YOUR_GEMINI_API_KEY":
-        print("Error: La API Key de Gemini no está configurada.")
-        return [{"error": "API Key no configurada."}]
-
     # Si no se pasaron IDs, se asume que todos son aplicables (comportamiento por defecto)
     all_applicable = not bool(applicable_control_ids)
     iso_controls = get_iso_controls_from_db()
@@ -49,12 +67,6 @@ def analyze_document_coverage(document_text: str, applicable_control_ids: list) 
         return [{"error": "No se pudieron cargar los controles de la ISO 27001 desde la base de datos. Ejecuta el script de inicialización 'scripts/seed_database.py'."}]
 
     try:
-        # ACTUALIZACIÓN DEFINITIVA:
-        # A petición del usuario, y como mejor práctica, cambiamos a un modelo más reciente y específico.
-        # 'gemini-1.5-flash-latest' es rápido, potente y obliga a usar la API moderna,
-        # lo que debería resolver el persistente error 'v1beta'.
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=api_key, temperature=0)
-
         prompt_template = """
         Eres un experto auditor de ciberseguridad especializado en la norma ISO 27001:2022.
         Tu tarea es analizar el texto del documento proporcionado y determinar si cubre el control específico del Anexo A.
@@ -81,7 +93,7 @@ def analyze_document_coverage(document_text: str, applicable_control_ids: list) 
             partial_variables={"format_instructions": output_parser.get_format_instructions()},
         )
         
-        chain = prompt | llm | output_parser
+        chain = prompt | get_llm() | output_parser
 
         results = []
         for control in iso_controls:
@@ -100,22 +112,29 @@ def analyze_document_coverage(document_text: str, applicable_control_ids: list) 
 
     except google_exceptions.NotFound as e:
         # Capturamos el error específico 404 y devolvemos un mensaje claro.
-        print(f"ERROR: Modelo de IA no encontrado. Esto suele ser un problema de versión de la librería. {e}")
-        error_message = "El modelo 'gemini-pro' no fue encontrado. Esto indica un problema con las versiones de las librerías de IA. Por favor, sigue las instrucciones para actualizar las dependencias."
+        print(f"ERROR: Modelo de IA no encontrado en la región especificada. {e}")
+        error_message = "El modelo de IA no fue encontrado. Verifica que el nombre del modelo especificado en ai_analyzer.py y la región (GOOGLE_CLOUD_LOCATION en .env) sean correctos y que el modelo esté disponible en esa región para tu proyecto."
+        return [{"error": error_message}]
+    except google_exceptions.PermissionDenied as e:
+        # Capturamos el error 403, que suele ser por la API deshabilitada.
+        print(f"ERROR: Permiso denegado por la API de Vertex AI. {e}")
+        error_message = "La API de Vertex AI está deshabilitada en tu proyecto de Google Cloud. Por favor, habilítala en la consola de GCP y espera unos minutos antes de reintentar."
+        return [{"error": error_message}]
+    except google_exceptions.ResourceExhausted as e:
+        # Capturamos específicamente el error de cuota (429)
+        print(f"ERROR: Se ha excedido la cuota de la API de Google AI Studio. {e}")
+        error_message = "Has alcanzado el límite de peticiones por minuto (normalmente 60 para el nivel gratuito). Para escalar, considera migrar a Vertex AI."
         return [{"error": error_message}]
     except Exception as e:
         # Capturamos cualquier otro error durante la llamada a la IA.
         print(f"Ha ocurrido un error inesperado durante el análisis de la IA: {e}")
-        return [{"error": f"Error inesperado de la API: {e}"}]
+        return [{"error": "Ocurrió un error inesperado al contactar con el servicio de IA. Revisa la consola para más detalles."}]
 
 def answer_question_with_rag(question: str, collection_name: str) -> str:
     """
     Responde una pregunta utilizando el contexto de un documento (RAG).
     """
     try:
-        api_key = os.getenv("API_KEY_GEMINI")
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=api_key, temperature=0.1)
-        
         # 1. Obtener el retriever para la colección del documento específico
         retriever = get_vector_store_retriever(collection_name)
 
@@ -139,7 +158,7 @@ def answer_question_with_rag(question: str, collection_name: str) -> str:
         rag_chain = (
             {"context": retriever, "question": RunnablePassthrough()}
             | prompt
-            | llm
+            | get_llm()
             | StrOutputParser()
         )
 
@@ -153,13 +172,6 @@ def generate_policy_draft(control_id: str, control_description: str) -> str:
     Genera un borrador de política para un control de la ISO 27001 no cubierto.
     """
     try:
-        api_key = os.getenv("API_KEY_GEMINI")
-        if not api_key or api_key == "YOUR_GEMINI_API_KEY":
-            print("Error: La API Key de Gemini no está configurada.")
-            return "Error: La API Key de Gemini no está configurada. Por favor, configúrala en el fichero .env."
-
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=api_key, temperature=0.3)
-
         prompt_template = """
         Eres un consultor experto en ciberseguridad y la norma ISO 27001:2022.
         Tu tarea es redactar un borrador de una política o procedimiento básico para una organización que necesita cubrir un control específico del Anexo A.
@@ -175,7 +187,9 @@ def generate_policy_draft(control_id: str, control_description: str) -> str:
         """
         prompt = PromptTemplate.from_template(prompt_template)
 
-        chain = prompt | llm | StrOutputParser()
+        # Para tareas creativas, es bueno aumentar la temperatura.
+        # Usamos .with_options() para no afectar la instancia global.
+        chain = prompt | get_llm().with_options(temperature=0.3) | StrOutputParser()
 
         return chain.invoke({"control_id": control_id, "control_description": control_description})
     except Exception as e:
@@ -187,13 +201,6 @@ def identify_risks_for_control(control_id: str, control_description: str) -> str
     Identifica riesgos potenciales para un control de la ISO 27001 no implementado.
     """
     try:
-        api_key = os.getenv("API_KEY_GEMINI")
-        if not api_key or api_key == "YOUR_GEMINI_API_KEY":
-            print("Error: La API Key de Gemini no está configurada.")
-            return "Error: La API Key de Gemini no está configurada."
-
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=api_key, temperature=0.5)
-
         prompt_template = """
         Eres un experto en gestión de riesgos de ciberseguridad y la norma ISO 27001:2022.
         Tu tarea es identificar y describir brevemente 2 o 3 riesgos comunes que una organización enfrentaría si NO implementara el siguiente control.
@@ -210,7 +217,8 @@ def identify_risks_for_control(control_id: str, control_description: str) -> str
         """
         prompt = PromptTemplate.from_template(prompt_template)
 
-        chain = prompt | llm | StrOutputParser()
+        # Aumentamos la temperatura para la generación de riesgos.
+        chain = prompt | get_llm().with_options(temperature=0.5) | StrOutputParser()
 
         return chain.invoke({"control_id": control_id, "control_description": control_description})
     except Exception as e:

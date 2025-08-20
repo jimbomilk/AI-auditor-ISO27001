@@ -80,7 +80,6 @@
         });
 
         const uploadForm = document.getElementById('upload-form');
-        const mainContent = document.getElementById('main-content');
         const loadingIndicator = document.getElementById('loading-indicator');
 
         uploadForm.addEventListener('submit', (e) => {
@@ -92,8 +91,7 @@
                 return;
             }
 
-            // Ocultar el contenido principal y mostrar el indicador de carga
-            mainContent.classList.add('hidden');
+            // Mostrar el indicador de carga
             loadingIndicator.classList.remove('hidden');
         });
     </script>

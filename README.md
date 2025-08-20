@@ -43,15 +43,54 @@ cd ia-auditor-iso27001
 
 Configurar y Ejecutar la Aplicación:
 
-# Navegar a la carpeta del proyecto (que ahora contiene todo)
+```bash
+# Navegar a la carpeta del proyecto
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate # En Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
 
-Configurar las variables de entorno en un archivo `.env` (copia de `.env.example`).
+### Configuración de Google Cloud y Vertex AI
 
-API_KEY_GEMINI="TU_CLAVE_DE_API_DE_GEMINI"
+Para que la aplicación pueda comunicarse con la IA, necesitas configurar la autenticación con Google Cloud.
+
+1.  **Crea o selecciona un proyecto** en la Consola de Google Cloud.
+2.  **Habilita la API de Vertex AI** para tu proyecto.
+3.  **Habilita la Facturación** para tu proyecto. **(¡Paso crucial!)** Aunque estés en el nivel gratuito, es un requisito indispensable para que las APIs de Vertex AI funcionen.
+4.  **Crea una Cuenta de Servicio (Service Account)**:
+    *   Ve a `IAM y Administración` > `Cuentas de servicio`.
+    *   Crea una nueva cuenta de servicio (ej. `ai-auditor-app`).
+    *   Asígnale el rol de **`Usuario de Vertex AI`** (`Vertex AI User`).
+5.  **Genera una clave JSON**:
+    *   Dentro de la cuenta de servicio, ve a la pestaña `Claves`.
+    *   Crea una nueva clave de tipo `JSON`. Se descargará un fichero.
+    *   Guarda este fichero en un lugar seguro dentro del proyecto (ej. en una carpeta `secrets/` que ya está en el `.gitignore`).
+
+### Configuración del fichero .env
+
+Copia el fichero `.env.example` a `.env` y actualízalo con la siguiente información:
+
+```
+# Ruta absoluta al fichero de credenciales JSON que descargaste.
+# Ejemplo en Windows: GOOGLE_APPLICATION_CREDENTIALS='C:\ruta\a\tu\proyecto\secrets\credenciales.json'
+# Ejemplo en Linux/macOS: GOOGLE_APPLICATION_CREDENTIALS='/home/usuario/proyecto/secrets/credenciales.json'
+GOOGLE_APPLICATION_CREDENTIALS="RUTA_A_TU_FICHERO_DE_CREDENCIALES.json"
+
+# ID de tu proyecto de Google Cloud
+GOOGLE_CLOUD_PROJECT="tu-id-de-proyecto-gcp"
+
+# Región de Google Cloud (ej. 'us-central1')
+GOOGLE_CLOUD_LOCATION="us-central1"
+
+# Nombre del modelo de IA a utilizar (ej. 'gemini-1.5-pro-latest')
+GEMINI_MODEL_NAME="gemini-1.5-pro-latest"
+
+# Cadena de conexión a tu clúster de MongoDB Atlas
 MONGO_URI="TU_CADENA_DE_CONEXION_A_MONGODB_ATLAS"
+
+# Clave secreta para las sesiones de Flask
+SECRET_KEY="GENERAR_UNA_CLAVE_SECRETA_ALEATORIA"
+```
 
 ### Configuración de MongoDB Atlas Vector Search
 
@@ -96,3 +135,17 @@ Próximos Pasos (Más allá del POC)
 [ ] Módulo de gestión de riesgos para ayudar en la evaluación y tratamiento de riesgos.
 
 [ ] Dashboard avanzado con métricas de madurez del SGSI.
+
+### Troubleshooting
+
+**Error `404 Publisher Model ... was not found` persistente**
+
+Si has verificado todos los pasos de configuración (API habilitada, cuenta de servicio con rol correcto, facturación activa) y sigues recibiendo un error 404, puede haber un problema en la capa de LangChain. Para diagnosticarlo, puedes ejecutar un script de prueba de conexión directa:
+
+```bash
+# Asegúrate de que tu entorno virtual está activado
+python scripts/test_vertex_connection.py
+```
+
+*   Si este script **funciona**, el problema está en cómo LangChain interactúa con la API.
+*   Si este script **falla**, el problema está definitivamente en la configuración de tu proyecto de Google Cloud, y debes revisar cada uno de los pasos de configuración de nuevo.

@@ -1,20 +1,18 @@
-# Virtual Environment
+# Entornos virtuales de Python
 venv/
-.venv/
+*.venv
+env/
 
-# Python cache
+# Ficheros de caché de Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
 
-# Environment variables
+# Ficheros de entorno que contienen secretos
 .env
 
-# IDE / Editor specific
-.idea/
-.vscode/
-*.swp
+# Ficheros de credenciales y secretos
+*.json
+secrets/
 
-# Uploaded files
+# Ficheros de subida de usuario
 uploads/
